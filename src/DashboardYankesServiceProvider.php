@@ -17,7 +17,6 @@ class DashboardYankesServiceProvider extends ServiceProvider
         $this->configHandle();
         $this->langHandle();
         $this->viewHandle();
-        $this->assetHandle();
         $this->migrationHandle();
     }
 
