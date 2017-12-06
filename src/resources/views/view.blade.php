@@ -1,0 +1,1 @@
+This is demo view file for Supriyanih\DashboardYankes package using blade template

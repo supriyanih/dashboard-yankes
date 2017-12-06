@@ -1,0 +1,338 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Input;
+use App\Kamar;
+use App\EpormasCity;
+use Validator, Image, Session, File, Response;
+class KamarController extends Controller
+{
+    
+     public function index()
+  {
+        $result = Kamar::whereNull('deleted_at')
+                        ->with('getCity')
+                        ->get();
+        return response()->json([
+            'result' => $result
+        ]);
+  }
+
+  
+  public function create()
+  {
+        $city = EpormasCity::all();
+        return response()->json([
+            'city' => $city,
+        ]);
+  }
+
+  
+  public function store(Request $request, $version='')
+  {
+        $path = \Request::path();
+        $explode = explode('/', $path);
+
+        $from = 'form';
+        if(in_array('api',$explode)){
+          $from = 'api';
+        }
+
+        $via = $from;
+        if($version != '' && $version != 'store'){
+          $via .= '-'.$version;
+        }
+
+        $rules = [
+            'count' => 'required|numeric',
+            'city_id' => 'required|numeric',
+            'tanggal' => 'required|date',
+        ];
+
+        $validator = Validator::make($request->all(), $rules);
+        if ($validator->fails()) {
+          return response()->json([
+              'title' => 'Error',
+              'type'  => 'error',
+              'message' => $validator->errors()->all()
+          ]);
+        }
+
+        $format = date('Y-m-d', strtotime(str_replace(' ','-',$request->tanggal)));
+        $resultcek = Kamar::whereNull('deleted_at')
+                             ->where('tanggal','like','%'.$format.'%')
+                             ->where('city_id',$request->city_id)
+                             ->groupBy('tahun','bulan','city_id')
+                             ->orderBy('bulan')
+                             ->count();
+        if($resultcek > 0){
+          return response()->json([
+              'title' => 'Error',
+              'type'  => 'error',
+              'message' => 'Data Sudah Ada.'
+          ]);
+        }
+
+        $date = explode("-",$format);
+        $data = Kamar::whereNull('deleted_at')
+                       ->where('tahun', $date[0])
+                       ->where('bulan', $date[1])
+                       ->where('city_id',$request->city_id)
+                       ->groupBy('tahun','bulan','city_id')
+                       ->orderBy('bulan')
+                       ->count();
+        if($data > 0){
+          return response()->json([
+              'title' => 'Error',
+              'type'  => 'error',
+              'message' => 'Data Sudah Ada.'
+          ]);
+        }
+
+        $result = Kamar::create([
+            'count' => $request->count,
+            'city_id' => $request->city_id,
+            'tahun' => $date[0],
+            'bulan' => $date[1],
+            'tanggal' => $format,
+            'user_id' => $request->user_id,
+            'via' => $via
+        ]);
+
+        return response()->json([
+            'title' => 'Success',
+            'type'  => 'success',
+            'message' => 'Data created successfully'
+        ]);
+  }
+
+  
+  public function show($version='', $id)
+  {
+        $result = Kamar::whereNull('deleted_at')
+                        ->with('getCity')
+                        ->find($id);
+        return response()->json([
+            'result' => $result
+        ]);
+  }
+
+  
+  public function edit($id)
+  {
+        $city = EpormasCity::all();
+        $result = Kamar::whereNull('deleted_at')
+                        ->with('getCity')
+                        ->find($id);
+        $format = date('Y-m-d', strtotime($result->tanggal));
+        return response()->json([
+            'result' => $result,
+            'city' => $city,
+            'tanggal' => $format,
+        ]);
+  }
+
+  
+  public function update(Request $request, $version='', $id)
+  {
+        $result = Kamar::whereNull('deleted_at')
+                        ->with('getCity')
+                        ->find($id);
+
+        $rules = [
+            'count' => 'required|numeric',
+            'city_id' => 'required|numeric',
+            'tanggal' => 'required|date',
+        ];
+
+        $validator = Validator::make($request->all(), $rules);
+        if ($validator->fails()) {
+          return response()->json([
+              'title' => 'Error',
+              'type'  => 'error',
+              'message' => $validator->errors()->all()
+          ]);
+        }
+
+        $format = date('Y-m-d', strtotime(str_replace(' ','-',$request->tanggal)));
+        if($result->city_id != $request->city_id ){
+            $resultcek = Kamar::whereNull('deleted_at')
+                                 ->where('tanggal','like','%'.$format.'%')
+                                     ->where('city_id',$request->city_id)
+                                 ->groupBy('tahun','bulan','city_id')
+                                 ->orderBy('bulan')
+                                 ->count();
+            if($resultcek > 0){
+              return response()->json([
+                  'title' => 'Error',
+                  'type'  => 'error',
+                  'message' => 'Data has already been taken.'
+              ]);
+            }
+        }
+
+        $date = explode("-",$format);
+        $dates = date('Y-m-d', strtotime($result->tanggal));
+        if($dates != $format){
+            $resultcek = Kamar::whereNull('deleted_at')
+                                     ->where('city_id',$request->city_id)
+                                 ->where('tanggal','like','%'.$format.'%')
+                                 ->groupBy('tahun','bulan','city_id')
+                                 ->orderBy('bulan')
+                                 ->count();
+            if($resultcek > 0){
+              return response()->json([
+                  'title' => 'Error',
+                  'type'  => 'error',
+                  'message' => 'Data has already been taken.'
+              ]);
+            }
+
+            $data = Kamar::whereNull('deleted_at')
+                           ->where('tahun', $date[0])
+                           ->where('bulan', $date[1])
+                               ->where('city_id',$request->city_id)
+                           ->groupBy('tahun','bulan','city_id')
+                           ->orderBy('bulan')
+                           ->count();
+            if($data > 0){
+              return response()->json([
+                  'title' => 'Error',
+                  'type'  => 'error',
+                  'message' => 'Data has already been taken.'
+              ]);
+            }
+        }
+
+        $path = \Request::path();
+        $explode = explode('/', $path);
+
+        $from = $result->via;
+        $user_id = $result->user_id;
+        if(in_array('api',$explode)){
+          $from = 'api';
+          $user_id = $request->user_id;
+        }
+
+        $via = $from;
+        if($version != '' && $version != 'update'){
+          $via .= '-'.$version;
+        }
+
+        $result->update([
+            'count' => $request->count,
+            'city_id' => $request->city_id,
+            'tahun' => $date[0],
+            'bulan' => $date[1],
+            'tanggal' => $format,
+            'user_id' => $user_id,
+            'via' => $via
+        ]);
+
+        return response()->json([
+            'title' => 'Success',
+            'type'  => 'success',
+            'message' => 'Data updated successfully'
+        ]);
+  }
+
+  
+  public function destroy($id)
+  {
+        Kamar::find($id)->delete();
+        return response()->json([
+            'message' => 'Data deleted successfully'
+        ]);
+  }
+
+  public function dashboard()
+  {
+    $grafikkamarcounter = DB::table('yankes_kamar')
+                    ->select('tahun','bulan','city_id', DB::raw('SUM(count) as count'))
+                    ->whereNull('deleted_at')->groupBy('tahun','bulan','city_id')->orderBy('bulan')->get();
+      $grafiktahunkamarcounter = DB::table('yankes_kamar')
+                    ->select('tahun', DB::raw('SUM(count) as count'))
+                    ->whereNull('deleted_at')->groupBy('tahun')->orderBy('tahun')->get();
+
+      $namaBulan = array('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec');
+      $namaBulans = array('Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember');
+      $city = EpormasCity::all(); 
+      $countcity = count($city);
+     
+
+      $countgrafikkamarcounter = count($grafikkamarcounter);
+      $countgrafiktahunkamarcounter = count($grafiktahunkamarcounter);
+      $datagrafikkamarcounter = [];
+      $datagrafiktahunkamarcounter = [];
+      $datagrafikcountkamarcounter = [];
+      $datagrafiktotalkamarcounter = [];
+      $grafikcountkamarcounter = [];
+      $grafikbulankamarcounter = [];
+      $grafiktotalkamarcounter = [];
+      $grafikpiekamarcounter = [];
+      for($q=0; $q<$countgrafiktahunkamarcounter; $q++){
+        $tahungrafikkamarcounter = $grafiktahunkamarcounter[$q]->tahun;
+        $gcountkamarcounter  = (int)$grafiktahunkamarcounter[$q]->count;
+        $totaldatakamarcounter = $gcountkamarcounter;
+        array_push($datagrafiktahunkamarcounter,$tahungrafikkamarcounter);
+        array_push($datagrafikcountkamarcounter,$gcountkamarcounter);
+        array_push($datagrafiktotalkamarcounter,$totaldatakamarcounter);
+
+        for($kota=1; $kota<=$countcity; $kota++){
+            for ($index=0; $index<12; $index++) {
+              $grafikcountkamarcounter[$q][$kota][$index] = 0;
+              $grafikbulankamarcounter[$q][$kota][$index] = 0;
+              $grafiktotalkamarcounter[$q][$kota][$index] = 0;
+              $grafikpiekamarcounter[$q][$kota][$index] = ['value'=>0,'name'=>$namaBulan[$index]];
+              $totaldatagrafikkamarcounter[$q][$index] = 0;
+            }
+        }
+        for($r=0; $r<$countgrafikkamarcounter; $r++){
+          $tahunskamarcounter = $grafikkamarcounter[$r]->tahun;
+          $bulanskamarcounter = $grafikkamarcounter[$r]->bulan;
+          $city_id = $grafikkamarcounter[$r]->city_id;
+          if($bulanskamarcounter < 10){
+            $bulankamarcounter = substr($bulanskamarcounter,1);
+          }else {
+            $bulankamarcounter = $bulanskamarcounter;
+          }
+          if($tahungrafikkamarcounter == $tahunskamarcounter){
+              $totaldatagrafikkamarcounter[$q][$bulankamarcounter-1] += $grafikkamarcounter[$r]->count;
+          }
+        }
+        for($r=0; $r<$countgrafikkamarcounter; $r++){
+          $tahunskamarcounter = $grafikkamarcounter[$r]->tahun;
+          $bulanskamarcounter = $grafikkamarcounter[$r]->bulan;
+          $city_id = $grafikkamarcounter[$r]->city_id;
+          if($bulanskamarcounter < 10){
+            $bulankamarcounter = substr($bulanskamarcounter,1);
+          }else {
+            $bulankamarcounter = $bulanskamarcounter;
+          }
+          if($tahungrafikkamarcounter == $tahunskamarcounter){
+              $grafikcountkamarcounter[$q][$city_id][$bulankamarcounter-1] = (int)$grafikkamarcounter[$r]->count;
+              $grafikbulankamarcounter[$q][$city_id][$bulankamarcounter-1] = $grafikkamarcounter[$r]->bulan;
+              $totaldatagrafikkamarcounters = $totaldatagrafikkamarcounter[$q][$bulankamarcounter-1];
+              $grafiktotalkamarcounter[$q][$city_id][$bulankamarcounter-1] = $totaldatagrafikkamarcounters;
+              $grafikpiekamarcounter[$q][$city_id][$bulankamarcounter-1] = ['value'=>$totaldatagrafikkamarcounters,'name'=>$namaBulan[$bulankamarcounter-1]];
+          }
+        }
+      }
+      $chartgrafikcountkamarcounter = ['chartdata'=>$grafikcountkamarcounter];
+      $datagrafikkamarcounter = ['count'=>$grafikcountkamarcounter, 'bulan'=>$grafikbulankamarcounter, 'namabulan'=>$namaBulan, 'namabulans'=>$namaBulans,'kota'=>$city, 'total'=>$grafiktotalkamarcounter, 'datatahun'=>['tahun'=>$datagrafiktahunkamarcounter, 'count'=>$datagrafikcountkamarcounter, 'totaldata'=>$datagrafiktotalkamarcounter], 'datapie'=>$grafikpiekamarcounter, 'seriesdata'=>[$chartgrafikcountkamarcounter]];
+      //end Pegawai kamar
+
+        return response()->json([
+            //Jumlah Penduduk
+            'datachartkamarcounter' => $datagrafikkamarcounter
+            //end Jumlah Penduduk
+        ]);
+    
+
+  }
+
+
+}

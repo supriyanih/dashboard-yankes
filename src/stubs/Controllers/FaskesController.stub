@@ -1,0 +1,339 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Input;
+use App\Faskes;
+use App\EpormasCity;
+use Validator, Image, Session, File, Response;
+
+class FaskesController extends Controller
+{
+      public function index()
+  {
+        $result = Faskes::whereNull('deleted_at')
+                        ->with('getCity')
+                        ->get();
+        return response()->json([
+            'result' => $result
+        ]);
+  }
+
+  
+  public function create()
+  {
+        $city = faskesCity::all();
+        return response()->json([
+            'city' => $city,
+        ]);
+  }
+
+  
+  public function store(Request $request, $version='')
+  {
+        $path = \Request::path();
+        $explode = explode('/', $path);
+
+        $from = 'form';
+        if(in_array('api',$explode)){
+          $from = 'api';
+        }
+
+        $via = $from;
+        if($version != '' && $version != 'store'){
+          $via .= '-'.$version;
+        }
+
+      	$rules = [
+            'count' => 'required|numeric',
+            'city_id' => 'required|numeric',
+            'tanggal' => 'required|date',
+        ];
+
+        $validator = Validator::make($request->all(), $rules);
+        if ($validator->fails()) {
+          return response()->json([
+              'title' => 'Error',
+              'type'  => 'error',
+              'message' => $validator->errors()->all()
+          ]);
+        }
+
+        $format = date('Y-m-d', strtotime(str_replace(' ','-',$request->tanggal)));
+        $resultcek = Faskes::whereNull('deleted_at')
+                             ->where('tanggal','like','%'.$format.'%')
+                             ->where('city_id',$request->city_id)
+                             ->groupBy('tahun','bulan','city_id')
+                             ->orderBy('bulan')
+                             ->count();
+        if($resultcek > 0){
+          return response()->json([
+              'title' => 'Error',
+              'type'  => 'error',
+              'message' => 'Data Sudah Ada.'
+          ]);
+        }
+
+        $date = explode("-",$format);
+        $data = Faskes::whereNull('deleted_at')
+                       ->where('tahun', $date[0])
+                       ->where('bulan', $date[1])
+                       ->where('city_id',$request->city_id)
+                       ->groupBy('tahun','bulan','city_id')
+                       ->orderBy('bulan')
+                       ->count();
+        if($data > 0){
+          return response()->json([
+              'title' => 'Error',
+              'type'  => 'error',
+              'message' => 'Data Sudah Ada.'
+          ]);
+        }
+
+        $result = Faskes::create([
+            'count' => $request->count,
+            'city_id' => $request->city_id,
+            'tahun' => $date[0],
+            'bulan' => $date[1],
+            'tanggal' => $format,
+            'user_id' => $request->user_id,
+            'via' => $via
+        ]);
+
+        return response()->json([
+            'title' => 'Success',
+            'type'  => 'success',
+            'message' => 'Data created successfully'
+        ]);
+  }
+
+  
+  public function show($version='', $id)
+  {
+        $result = Faskes::whereNull('deleted_at')
+                        ->with('getCity')
+                        ->find($id);
+        return response()->json([
+            'result' => $result
+        ]);
+  }
+
+  
+  public function edit($id)
+  {
+        $city = faskesCity::all();
+        $result = Faskes::whereNull('deleted_at')
+                        ->with('getCity')
+                        ->find($id);
+        $format = date('Y-m-d', strtotime($result->tanggal));
+        return response()->json([
+            'result' => $result,
+            'city' => $city,
+            'tanggal' => $format,
+        ]);
+  }
+
+  
+  public function update(Request $request, $version='', $id)
+  {
+        $result = Faskes::whereNull('deleted_at')
+                        ->with('getCity')
+                        ->find($id);
+
+        $rules = [
+            'count' => 'required|numeric',
+            'city_id' => 'required|numeric',
+            'tanggal' => 'required|date',
+        ];
+
+        $validator = Validator::make($request->all(), $rules);
+        if ($validator->fails()) {
+          return response()->json([
+              'title' => 'Error',
+              'type'  => 'error',
+              'message' => $validator->errors()->all()
+          ]);
+        }
+
+        $format = date('Y-m-d', strtotime(str_replace(' ','-',$request->tanggal)));
+        if($result->city_id != $request->city_id ){
+            $resultcek = Faskes::whereNull('deleted_at')
+                                 ->where('tanggal','like','%'.$format.'%')
+            		                 ->where('city_id',$request->city_id)
+                                 ->groupBy('tahun','bulan','city_id')
+                                 ->orderBy('bulan')
+                                 ->count();
+            if($resultcek > 0){
+              return response()->json([
+                  'title' => 'Error',
+                  'type'  => 'error',
+                  'message' => 'Data has already been taken.'
+              ]);
+            }
+        }
+
+        $date = explode("-",$format);
+        $dates = date('Y-m-d', strtotime($result->tanggal));
+        if($dates != $format){
+            $resultcek = Faskes::whereNull('deleted_at')
+            		                 ->where('city_id',$request->city_id)
+                                 ->where('tanggal','like','%'.$format.'%')
+                                 ->groupBy('tahun','bulan','city_id')
+                                 ->orderBy('bulan')
+                                 ->count();
+            if($resultcek > 0){
+              return response()->json([
+                  'title' => 'Error',
+                  'type'  => 'error',
+                  'message' => 'Data has already been taken.'
+              ]);
+            }
+
+            $data = Faskes::whereNull('deleted_at')
+                           ->where('tahun', $date[0])
+                           ->where('bulan', $date[1])
+            		           ->where('city_id',$request->city_id)
+                           ->groupBy('tahun','bulan','city_id')
+                           ->orderBy('bulan')
+                           ->count();
+            if($data > 0){
+              return response()->json([
+                  'title' => 'Error',
+                  'type'  => 'error',
+                  'message' => 'Data has already been taken.'
+              ]);
+            }
+        }
+
+        $path = \Request::path();
+        $explode = explode('/', $path);
+
+        $from = $result->via;
+        $user_id = $result->user_id;
+        if(in_array('api',$explode)){
+          $from = 'api';
+          $user_id = $request->user_id;
+        }
+
+        $via = $from;
+        if($version != '' && $version != 'update'){
+          $via .= '-'.$version;
+        }
+
+        $result->update([
+            'count' => $request->count,
+            'city_id' => $request->city_id,
+            'tahun' => $date[0],
+            'bulan' => $date[1],
+            'tanggal' => $format,
+            'user_id' => $user_id,
+            'via' => $via
+        ]);
+
+        return response()->json([
+            'title' => 'Success',
+            'type'  => 'success',
+            'message' => 'Data updated successfully'
+        ]);
+  }
+
+  
+  public function destroy($id)
+  {
+        Faskes::find($id)->delete();
+        return response()->json([
+            'message' => 'Data deleted successfully'
+        ]);
+  }
+
+
+    public function dashboard()
+    {
+      //Pegawai faskes
+      $grafikfaskescounter = DB::table('yankes_faskes')
+                    ->select('tahun','bulan','city_id', DB::raw('SUM(count) as count'))
+                    ->whereNull('deleted_at')->groupBy('tahun','bulan','city_id')->orderBy('bulan')->get();
+      $grafiktahunfaskescounter = DB::table('yankes_faskes')
+                    ->select('tahun', DB::raw('SUM(count) as count'))
+                    ->whereNull('deleted_at')->groupBy('tahun')->orderBy('tahun')->get();
+
+      $namaBulan = array('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec');
+      $namaBulans = array('Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember');
+      $city = EpormasCity::all();
+      
+      $countcity = count($city);
+     
+
+      $countgrafikfaskescounter = count($grafikfaskescounter);
+      $countgrafiktahunfaskescounter = count($grafiktahunfaskescounter);
+      $datagrafikfaskescounter = [];
+      $datagrafiktahunfaskescounter = [];
+      $datagrafikcountfaskescounter = [];
+      $datagrafiktotalfaskescounter = [];
+      $grafikcountfaskescounter = [];
+      $grafikbulanfaskescounter = [];
+      $grafiktotalfaskescounter = [];
+      $grafikpiefaskescounter = [];
+      for($q=0; $q<$countgrafiktahunfaskescounter; $q++){
+        $tahungrafikfaskescounter = $grafiktahunfaskescounter[$q]->tahun;
+        $gcountfaskescounter  = (int)$grafiktahunfaskescounter[$q]->count;
+        $totaldatafaskescounter = $gcountfaskescounter;
+        array_push($datagrafiktahunfaskescounter,$tahungrafikfaskescounter);
+        array_push($datagrafikcountfaskescounter,$gcountfaskescounter);
+        array_push($datagrafiktotalfaskescounter,$totaldatafaskescounter);
+
+        for($kota=1; $kota<=$countcity; $kota++){
+            for ($index=0; $index<12; $index++) {
+              $grafikcountfaskescounter[$q][$kota][$index] = 0;
+              $grafikbulanfaskescounter[$q][$kota][$index] = 0;
+              $grafiktotalfaskescounter[$q][$kota][$index] = 0;
+              $grafikpiefaskescounter[$q][$kota][$index] = ['value'=>0,'name'=>$namaBulan[$index]];
+              $totaldatagrafikfaskescounter[$q][$index] = 0;
+            }
+        }
+        for($r=0; $r<$countgrafikfaskescounter; $r++){
+          $tahunsfaskescounter = $grafikfaskescounter[$r]->tahun;
+          $bulansfaskescounter = $grafikfaskescounter[$r]->bulan;
+          $city_id = $grafikfaskescounter[$r]->city_id;
+          if($bulansfaskescounter < 10){
+            $bulanfaskescounter = substr($bulansfaskescounter,1);
+          }else {
+            $bulanfaskescounter = $bulansfaskescounter;
+          }
+          if($tahungrafikfaskescounter == $tahunsfaskescounter){
+              $totaldatagrafikfaskescounter[$q][$bulanfaskescounter-1] += $grafikfaskescounter[$r]->count;
+          }
+        }
+        for($r=0; $r<$countgrafikfaskescounter; $r++){
+          $tahunsfaskescounter = $grafikfaskescounter[$r]->tahun;
+          $bulansfaskescounter = $grafikfaskescounter[$r]->bulan;
+          $city_id = $grafikfaskescounter[$r]->city_id;
+          if($bulansfaskescounter < 10){
+            $bulanfaskescounter = substr($bulansfaskescounter,1);
+          }else {
+            $bulanfaskescounter = $bulansfaskescounter;
+          }
+          if($tahungrafikfaskescounter == $tahunsfaskescounter){
+              $grafikcountfaskescounter[$q][$city_id][$bulanfaskescounter-1] = (int)$grafikfaskescounter[$r]->count;
+              $grafikbulanfaskescounter[$q][$city_id][$bulanfaskescounter-1] = $grafikfaskescounter[$r]->bulan;
+              $totaldatagrafikfaskescounters = $totaldatagrafikfaskescounter[$q][$bulanfaskescounter-1];
+              $grafiktotalfaskescounter[$q][$city_id][$bulanfaskescounter-1] = $totaldatagrafikfaskescounters;
+              $grafikpiefaskescounter[$q][$city_id][$bulanfaskescounter-1] = ['value'=>$totaldatagrafikfaskescounters,'name'=>$namaBulan[$bulanfaskescounter-1]];
+          }
+        }
+      }
+      $chartgrafikcountfaskescounter = ['chartdata'=>$grafikcountfaskescounter];
+      $datagrafikfaskescounter = ['count'=>$grafikcountfaskescounter, 'bulan'=>$grafikbulanfaskescounter, 'namabulan'=>$namaBulan, 'namabulans'=>$namaBulans,'kota'=>$city, 'total'=>$grafiktotalfaskescounter, 'datatahun'=>['tahun'=>$datagrafiktahunfaskescounter, 'count'=>$datagrafikcountfaskescounter, 'totaldata'=>$datagrafiktotalfaskescounter], 'datapie'=>$grafikpiefaskescounter, 'seriesdata'=>[$chartgrafikcountfaskescounter]];
+      //end Pegawai faskes
+
+        return response()->json([
+            //Jumlah Penduduk
+            'datachartfaskescounter' => $datagrafikfaskescounter
+            //end Jumlah Penduduk
+        ]);
+    }
+
+
+}
